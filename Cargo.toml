@@ -1,0 +1,33 @@
+[package]
+name = "redland"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+thiserror = "1"
+clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+sunrise = "1"
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }
+wayland-protocols-wlr = { version = "0.2", features = ["client"] }
+# mmap for gamma tables
+memmap2 = "0.9"
+# For polling FDs similar to the C version
+nix = { version = "0.29", features = ["poll", "fs", "signal", "event"] }
+# D-Bus (GeoClue2) — using blocking API for simplicity
+zbus = { version = "4", default-features = false, features = ["blocking", "async-io"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Unix socket server for IPC
+tokio = { version = "1", features = ["net", "rt-multi-thread", "macros", "io-util", "signal", "time", "sync"] }
+# Blackbody color temperature conversion
+tempergb = "0.1"
+# Safe casting for mmap
+bytemuck = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
