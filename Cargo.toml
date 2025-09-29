@@ -2,6 +2,8 @@
 name = "redland"
 version = "0.1.0"
 edition = "2024"
+description = "Wayland screen color temperature adjuster with automatic day/night cycle support"
+license = "Apache-2.0"
 
 [dependencies]
 anyhow = "1"
