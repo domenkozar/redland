@@ -1,9 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
 
 use crate::cli::ModeArg;
 use crate::scheduling::DayPhase;
@@ -64,45 +62,49 @@ impl SharedAppState {
     }
 }
 
-async fn handle_client(
-    stream: UnixStream,
+fn format_status_response(state: &SharedAppState) -> IpcResponse {
+    let current = match state.current_mode {
+        DayPhase::Night => "night",
+        DayPhase::Sunrise => "sunrise",
+        DayPhase::Day => "day",
+        DayPhase::Sunset => "sunset",
+    };
+    let automatic = match state.automatic_mode {
+        DayPhase::Night => "night",
+        DayPhase::Sunrise => "sunrise",
+        DayPhase::Day => "day",
+        DayPhase::Sunset => "sunset",
+    };
+    IpcResponse::Status {
+        requested_mode: format!("{:?}", state.requested_mode).to_lowercase(),
+        current_mode: current.to_string(),
+        automatic_mode: automatic.to_string(),
+        current_temp: state.current_temp,
+        low_temp: state.low_temp,
+        high_temp: state.high_temp,
+        location: state.location,
+        sun_times: state.sun_times.clone(),
+    }
+}
+
+pub async fn handle_stdin_commands(
     shared_state: Arc<Mutex<SharedAppState>>,
     mode_tx: tokio::sync::mpsc::UnboundedSender<ModeArg>,
 ) -> Result<()> {
-    let (reader, mut writer) = stream.into_split();
-    let mut reader = BufReader::new(reader);
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin);
+    let mut stdout = tokio::io::stdout();
     let mut line = String::new();
 
     loop {
         line.clear();
         match reader.read_line(&mut line).await {
-            Ok(0) => break,
+            Ok(0) => break, // EOF
             Ok(_) => {
                 let response = match serde_json::from_str::<IpcCommand>(&line.trim()) {
                     Ok(IpcCommand::GetStatus) => {
                         let state = shared_state.lock().unwrap();
-                        let current = match state.current_mode {
-                            DayPhase::Night => "night",
-                            DayPhase::Sunrise => "sunrise",
-                            DayPhase::Day => "day",
-                            DayPhase::Sunset => "sunset",
-                        };
-                        let automatic = match state.automatic_mode {
-                            DayPhase::Night => "night",
-                            DayPhase::Sunrise => "sunrise",
-                            DayPhase::Day => "day",
-                            DayPhase::Sunset => "sunset",
-                        };
-                        IpcResponse::Status {
-                            requested_mode: format!("{:?}", state.requested_mode).to_lowercase(),
-                            current_mode: current.to_string(),
-                            automatic_mode: automatic.to_string(),
-                            current_temp: state.current_temp,
-                            low_temp: state.low_temp,
-                            high_temp: state.high_temp,
-                            location: state.location,
-                            sun_times: state.sun_times.clone(),
-                        }
+                        format_status_response(&state)
                     }
                     Ok(IpcCommand::SetMode { mode }) => {
                         eprintln!("Setting mode to: {}", mode);
@@ -118,32 +120,9 @@ async fn handle_client(
 
                         if let Err(e) = mode_tx.send(new_mode) {
                             eprintln!("Failed to send mode change: {}", e);
-                        } else {
-                            eprintln!("Sent mode change to main loop: {:?}", new_mode);
                         }
 
-                        let current = match state.current_mode {
-                            DayPhase::Night => "night",
-                            DayPhase::Sunrise => "sunrise",
-                            DayPhase::Day => "day",
-                            DayPhase::Sunset => "sunset",
-                        };
-                        let automatic = match state.automatic_mode {
-                            DayPhase::Night => "night",
-                            DayPhase::Sunrise => "sunrise",
-                            DayPhase::Day => "day",
-                            DayPhase::Sunset => "sunset",
-                        };
-                        IpcResponse::Status {
-                            requested_mode: format!("{:?}", state.requested_mode).to_lowercase(),
-                            current_mode: current.to_string(),
-                            automatic_mode: automatic.to_string(),
-                            current_temp: state.current_temp,
-                            low_temp: state.low_temp,
-                            high_temp: state.high_temp,
-                            location: state.location,
-                            sun_times: state.sun_times.clone(),
-                        }
+                        format_status_response(&state)
                     }
                     Ok(IpcCommand::SetTemperature { low, high }) => {
                         eprintln!("Setting temperature: {} - {}", low, high);
@@ -151,28 +130,7 @@ async fn handle_client(
                         state.low_temp = low;
                         state.high_temp = high;
                         state.current_temp = (low + high) / 2;
-                        let current = match state.current_mode {
-                            DayPhase::Night => "night",
-                            DayPhase::Sunrise => "sunrise",
-                            DayPhase::Day => "day",
-                            DayPhase::Sunset => "sunset",
-                        };
-                        let automatic = match state.automatic_mode {
-                            DayPhase::Night => "night",
-                            DayPhase::Sunrise => "sunrise",
-                            DayPhase::Day => "day",
-                            DayPhase::Sunset => "sunset",
-                        };
-                        IpcResponse::Status {
-                            requested_mode: format!("{:?}", state.requested_mode).to_lowercase(),
-                            current_mode: current.to_string(),
-                            automatic_mode: automatic.to_string(),
-                            current_temp: state.current_temp,
-                            low_temp: state.low_temp,
-                            high_temp: state.high_temp,
-                            location: state.location,
-                            sun_times: state.sun_times.clone(),
-                        }
+                        format_status_response(&state)
                     }
                     Err(e) => IpcResponse::Error {
                         message: format!("Invalid command: {}", e),
@@ -180,12 +138,12 @@ async fn handle_client(
                 };
 
                 let response_json = serde_json::to_string(&response)?;
-                writer.write_all(response_json.as_bytes()).await?;
-                writer.write_all(b"\n").await?;
-                writer.flush().await?;
+                stdout.write_all(response_json.as_bytes()).await?;
+                stdout.write_all(b"\n").await?;
+                stdout.flush().await?;
             }
             Err(e) => {
-                eprintln!("Error reading from client: {}", e);
+                eprintln!("Error reading from stdin: {}", e);
                 break;
             }
         }
@@ -193,33 +151,3 @@ async fn handle_client(
     Ok(())
 }
 
-pub async fn start_socket_server(
-    shared_state: Arc<Mutex<SharedAppState>>,
-    mode_tx: tokio::sync::mpsc::UnboundedSender<ModeArg>,
-    socket_path: &Path,
-) -> Result<()> {
-
-    if socket_path.exists() {
-        std::fs::remove_file(socket_path)?;
-    }
-
-    let listener = UnixListener::bind(socket_path)?;
-    eprintln!("IPC server listening on {}", socket_path.display());
-
-    loop {
-        match listener.accept().await {
-            Ok((stream, _)) => {
-                let state_clone = Arc::clone(&shared_state);
-                let tx_clone = mode_tx.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_client(stream, state_clone, tx_clone).await {
-                        eprintln!("Error handling client: {}", e);
-                    }
-                });
-            }
-            Err(e) => {
-                eprintln!("Error accepting connection: {}", e);
-            }
-        }
-    }
-}

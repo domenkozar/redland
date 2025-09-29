@@ -20,17 +20,17 @@ cargo build --release
 
 Run the daemon:
 ```bash
-cargo run -- --socket /tmp/redland.sock
+cargo run
 ```
 
 Run with manual sunrise/sunset times:
 ```bash
-cargo run -- --sunrise 06:30 --sunset 18:00 --socket /tmp/redland.sock
+cargo run -- --sunrise 06:30 --sunset 18:00
 ```
 
 Run with specific coordinates (skips GeoClue):
 ```bash
-cargo run -- --lat 45.0 --lon 15.0 --socket /tmp/redland.sock
+cargo run -- --lat 45.0 --lon 15.0
 ```
 
 Run the QML UI (requires quickshell):
@@ -48,7 +48,7 @@ quickshell -c redland-ui.qml
 
 - **scheduling.rs**: Sunrise/sunset calculations using the `sunrise` crate. Computes day phases (Night, Sunrise, Day, Sunset) and temperature interpolation during transitions.
 
-- **ipc.rs**: Unix socket server (tokio-based) for JSON-line IPC. Handles commands: `get_status`, `set_mode`, `set_temperature`. Updates shared application state thread-safely with Arc<Mutex>.
+- **ipc.rs**: JSONL stdin/stdout handler (tokio-based) for IPC with UI process. Handles commands: `get_status`, `set_mode`, `set_temperature`. Updates shared application state thread-safely with Arc<Mutex>.
 
 - **geoclue.rs**: D-Bus client for GeoClue2 location service (using zbus blocking API).
 
@@ -59,24 +59,24 @@ quickshell -c redland-ui.qml
 ### UI Integration
 
 **redland-ui.qml**: Quickshell-based system tray application that:
-- Spawns the daemon process with socket IPC
+- Spawns the daemon process and communicates via stdin/stdout
 - Displays current mode icon (sun/moon/sunset) with superscript "A" for automatic mode
 - Provides popup menu for mode selection (Auto/Day/Night/Sunset)
-- Polls daemon status every second via JSON IPC
+- Polls daemon status every second via JSONL over stdin/stdout
 - Shows current temperature and configured range
 
 ### IPC Protocol
 
-JSON-line protocol over Unix socket:
+JSON-line protocol over stdin/stdout:
 
-Commands (client → daemon):
+Commands (UI → daemon via stdin):
 ```json
 {"type": "get_status"}
 {"type": "set_mode", "mode": "auto|day|night|sunset"}
 {"type": "set_temperature", "low": 4000, "high": 6500}
 ```
 
-Response (daemon → client):
+Response (daemon → UI via stdout):
 ```json
 {
   "type": "status",
@@ -95,7 +95,7 @@ Response (daemon → client):
 
 The main loop uses tokio::select! to handle:
 1. SIGUSR1 signals (force immediate update)
-2. Mode changes from IPC socket
+2. Mode changes from stdin IPC
 3. Timed wake-ups for sunrise/sunset transitions
 
 Wayland events are polled non-blockingly using nix::poll with POLLIN/POLLERR/POLLHUP flags.

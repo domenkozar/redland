@@ -15,7 +15,7 @@ use wayland_client::Connection;
 
 use cli::{ModeArg, Opts};
 use geoclue::geoclue_lat_lon;
-use ipc::{SharedAppState, start_socket_server};
+use ipc::SharedAppState;
 use scheduling::{
     DayPhase, TrayOverride, compute_day_stops, next_sunrise_timestamp, parse_hhmm, phase_for,
     temperature_for,
@@ -63,15 +63,13 @@ async fn main() -> Result<()> {
 
     let (mode_tx, mut mode_rx) = tokio::sync::mpsc::unbounded_channel::<ModeArg>();
 
-    if let Some(socket_path) = &opts.socket {
-        let shared_state_clone = Arc::clone(&shared_state);
-        let socket_path = socket_path.clone();
-        tokio::spawn(async move {
-            if let Err(e) = start_socket_server(shared_state_clone, mode_tx, &socket_path).await {
-                eprintln!("Socket server error: {}", e);
-            }
-        });
-    }
+    // Spawn stdin reader for JSONL IPC
+    let shared_state_clone = Arc::clone(&shared_state);
+    tokio::spawn(async move {
+        if let Err(e) = ipc::handle_stdin_commands(shared_state_clone, mode_tx).await {
+            eprintln!("Stdin handler error: {}", e);
+        }
+    });
 
     let mut tray_override: Option<TrayOverride> = None;
     let mut initial_override_pending = if matches!(startup_mode, ModeArg::Day | ModeArg::Night) {

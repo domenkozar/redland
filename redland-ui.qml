@@ -172,17 +172,35 @@ ShellRoot {
     // Daemon process
     Process {
         id: daemonProcess
-        command: ["/home/domen/dev/redland/target/debug/redland", "--socket", "/tmp/redland.sock"]
+        command: ["redland"]
         running: true
 
         stdout: SplitParser {
             splitMarker: "\n"
-            onRead: data => console.log("Daemon:", data)
+            onRead: data => {
+                console.log("Daemon stdout:", data)
+                try {
+                    const response = JSON.parse(data)
+                    if (response.type === "status") {
+                        backend.requestedMode = response.requested_mode
+                        backend.currentMode = response.current_mode
+                        backend.automaticMode = response.automatic_mode
+                        backend.currentTemp = response.current_temp
+                        backend.lowTemp = response.low_temp
+                        backend.highTemp = response.high_temp
+                        backend.location = response.location
+                        backend.sunTimes = response.sun_times
+                        console.log("Updated mode to:", backend.requestedMode, "current:", backend.currentMode, "auto:", backend.automaticMode)
+                    }
+                } catch (e) {
+                    console.error("Failed to parse daemon response:", e)
+                }
+            }
         }
 
         stderr: SplitParser {
             splitMarker: "\n"
-            onRead: data => console.log("Daemon:", data)
+            onRead: data => console.log("Daemon stderr:", data)
         }
     }
 
@@ -199,74 +217,36 @@ ShellRoot {
         property var location: null
         property var sunTimes: null
 
-        // Socket communication
-        Socket {
-            id: socket
-            path: "/tmp/redland.sock"
-
-            parser: SplitParser {
-                splitMarker: "\n"
-
-                onRead: data => {
-                    console.log("Received from daemon:", data)
-                    try {
-                        const response = JSON.parse(data)
-                        if (response.type === "status") {
-                            backend.requestedMode = response.requested_mode
-                            backend.currentMode = response.current_mode
-                            backend.automaticMode = response.automatic_mode
-                            backend.currentTemp = response.current_temp
-                            backend.lowTemp = response.low_temp
-                            backend.highTemp = response.high_temp
-                            backend.location = response.location
-                            backend.sunTimes = response.sun_times
-                            console.log("Updated mode to:", backend.requestedMode, "current:", backend.currentMode, "auto:", backend.automaticMode)
-                        }
-                    } catch (e) {
-                        console.error("Failed to parse response:", e)
-                    }
-                }
-            }
-
-            onError: error => {
-                console.error("Socket error:", error)
-            }
-        }
-
         function sendCommand(cmd) {
             const cmdJson = JSON.stringify(cmd)
             console.log("Sending command:", cmdJson)
-            socket.write(cmdJson + "\n")
-            socket.flush()
+            daemonProcess.write(cmdJson + "\n")
         }
-        
+
         function getStatus() {
             sendCommand({"type": "get_status"})
         }
-        
+
         function setMode(newMode) {
             sendCommand({"type": "set_mode", "mode": newMode})
         }
-        
+
         function setTemperature(low, high) {
             sendCommand({"type": "set_temperature", "low": low, "high": high})
         }
-        
+
         Component.onCompleted: {
             // Wait for daemon to start, then get initial status
             Qt.callLater(() => {
                 statusTimer.start()
             })
         }
-        
+
         Timer {
             id: statusTimer
             interval: 1000
             repeat: true
             onTriggered: {
-                if (!socket.connected) {
-                    socket.connected = true
-                }
                 backend.getStatus()
             }
         }

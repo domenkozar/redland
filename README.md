@@ -8,7 +8,7 @@ A Wayland screen color temperature adjuster with automatic day/night cycle suppo
 - **Multiple location methods**: GeoClue2, manual coordinates, or fixed times
 - **Smooth transitions** between day and night temperatures
 - **Manual mode override** (Day/Night/Sunset/Auto) with automatic expiration
-- **IPC control** via Unix socket for external integration
+- **IPC control** via JSONL stdin/stdout for UI integration
 - **System tray UI** using Quickshell (optional)
 - **Wayland native** using wlr-gamma-control-unstable-v1 protocol
 
@@ -37,43 +37,43 @@ The binary will be available at `target/release/redland`.
 
 Run with automatic location detection (via GeoClue2):
 ```bash
-redland --socket /tmp/redland.sock
+redland
 ```
 
 ### Manual Coordinates
 
 Specify latitude and longitude to skip GeoClue:
 ```bash
-redland --lat 45.0 --lon 15.0 --socket /tmp/redland.sock
+redland --lat 45.0 --lon 15.0
 ```
 
 ### Fixed Sunrise/Sunset Times
 
 Use manual times (HH:MM format) instead of calculated sunrise/sunset:
 ```bash
-redland --sunrise 06:30 --sunset 18:00 --socket /tmp/redland.sock
+redland --sunrise 06:30 --sunset 18:00
 ```
 
 ### Custom Temperature Range
 
 Adjust the temperature range (default: 4000K night, 6500K day):
 ```bash
-redland --low 3000 --high 6500 --socket /tmp/redland.sock
+redland --low 3000 --high 6500
 ```
 
 ### Transition Duration
 
 Set transition duration around sunrise/sunset (default: 1800 seconds):
 ```bash
-redland --duration 3600 --socket /tmp/redland.sock
+redland --duration 3600
 ```
 
 ### Start in Specific Mode
 
 ```bash
-redland --mode day --socket /tmp/redland.sock    # Force day mode
-redland --mode night --socket /tmp/redland.sock  # Force night mode
-redland --mode auto --socket /tmp/redland.sock   # Automatic (default)
+redland --mode day    # Force day mode
+redland --mode night  # Force night mode
+redland --mode auto   # Automatic (default)
 ```
 
 ## System Tray UI
@@ -94,24 +94,24 @@ Features:
 
 ## IPC Protocol
 
-Redland uses a JSON-line protocol over Unix socket for external control.
+Redland uses a JSON-line protocol over stdin/stdout for UI integration. The daemon is typically spawned by the UI (e.g., redland-ui.qml) and controlled by writing JSONL commands to its stdin and reading responses from stdout.
 
 ### Commands
 
 **Get Status:**
-```bash
-echo '{"type":"get_status"}' | nc -U /tmp/redland.sock
+```json
+{"type":"get_status"}
 ```
 
 **Set Mode:**
-```bash
-echo '{"type":"set_mode","mode":"night"}' | nc -U /tmp/redland.sock
+```json
+{"type":"set_mode","mode":"night"}
 ```
 Valid modes: `auto`, `day`, `night`, `sunset`
 
 **Set Temperature Range:**
-```bash
-echo '{"type":"set_temperature","low":3000,"high":6500}' | nc -U /tmp/redland.sock
+```json
+{"type":"set_temperature","low":3000,"high":6500}
 ```
 
 ### Response Format
@@ -143,7 +143,6 @@ Options:
   -s, --sunset <SUNSET>        Manual sunset time HH:MM (local)
   -d, --duration <DURATION>    Transition duration in seconds [default: 1800]
       --mode <MODE>            Operating mode [default: auto] [possible values: auto, day, night, sunset]
-      --socket <SOCKET>        Enable IPC socket server (specify socket path)
   -h, --help                   Print help
   -V, --version                Print version
 ```

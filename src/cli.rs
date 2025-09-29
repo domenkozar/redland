@@ -1,5 +1,4 @@
 use clap::{ArgAction, Parser, ValueEnum};
-use std::path::PathBuf;
 
 #[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
 pub enum ModeArg {
@@ -51,8 +50,4 @@ pub struct Opts {
     /// Operating mode override (auto/day/night)
     #[arg(long = "mode", value_enum, default_value_t = ModeArg::Auto)]
     pub mode: ModeArg,
-
-    /// Enable IPC socket server for external control (specify socket path)
-    #[arg(long = "socket")]
-    pub socket: Option<PathBuf>,
 }
